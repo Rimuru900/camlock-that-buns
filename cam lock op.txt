@@ -1,0 +1,177 @@
+-- getgenv().settings = {
+getgenv().settings = {
+    camLockEnabled = false,
+    prediction = 0.5,  -- Adjust prediction based on ping
+    smoothness = 0.25,  -- Adjust smoothness for camera movement
+    jumpOffset = 1,  -- Adjust jump offset based on ping
+    hitPart = "UpperTorso",  -- Default hit part
+    maxDistance = 500,  -- Maximum distance for camera lock
+    crosshairSize = 15,  -- Crosshair size
+    crosshairColor = Color3.fromRGB(255, 255, 255),  -- Crosshair color (White)
+}
+
+local player = game.Players.LocalPlayer
+local mouse = player:GetMouse()
+local camera = game.Workspace.CurrentCamera
+local userInputService = game:GetService("UserInputService")
+local heartbeat = game:GetService("RunService").Heartbeat
+
+-- Function to check if target is valid (alive and within range)
+local function isValidTarget(target)
+    if target and target.Character then
+        local humanoid = target.Character:FindFirstChildOfClass("Humanoid")
+        if humanoid and humanoid.Health > 0 then
+            local distance = (target.Character.HumanoidRootPart.Position - camera.CFrame.Position).Magnitude
+            return distance <= getgenv().settings.maxDistance
+        end
+    end
+    return false
+end
+
+-- Function to find closest player based on camera direction
+local function findClosestPlayer()
+    local closestPlayer = nil
+    local closestDistance = math.huge
+    for _, potentialTarget in pairs(game.Players:GetPlayers()) do
+        if potentialTarget ~= player and isValidTarget(potentialTarget) then
+            local targetPosition = potentialTarget.Character.HumanoidRootPart.Position
+            local screenPosition = camera:WorldToScreenPoint(targetPosition)
+            local mousePosition = Vector2.new(mouse.X, mouse.Y)
+            local distance = (Vector2.new(screenPosition.X, screenPosition.Y) - mousePosition).Magnitude
+            if distance < closestDistance then
+                closestPlayer = potentialTarget
+                closestDistance = distance
+            end
+        end
+    end
+    return closestPlayer
+end
+
+-- Function to apply network ping compensation
+local function applyPingCompensation(offset)
+    local ping = player:GetNetworkPing()  -- Get the player's ping
+    return offset + (ping / 2000)
+end
+
+-- Crosshair rendering
+local crosshair = Instance.new("Frame")
+crosshair.AnchorPoint = Vector2.new(0.5, 0.5)
+crosshair.Size = UDim2.new(0, getgenv().settings.crosshairSize, 0, getgenv().settings.crosshairSize)
+crosshair.Position = UDim2.new(0.5, 0, 0.5, 0)
+crosshair.BackgroundColor3 = getgenv().settings.crosshairColor
+crosshair.BorderSizePixel = 0
+crosshair.Parent = player.PlayerGui:WaitForChild("ScreenGui")
+
+-- Toggle button creation
+local toggleButton = Instance.new("TextButton")
+toggleButton.Size = UDim2.new(0, 100, 0, 40)
+toggleButton.Position = UDim2.new(0.5, -50, 0, 0)
+toggleButton.BackgroundColor3 = Color3.fromRGB(0, 0, 0)
+toggleButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+toggleButton.Text = "Cam Lock Off"
+toggleButton.Font = Enum.Font.SourceSansBold
+toggleButton.TextSize = 18
+toggleButton.Parent = player.PlayerGui:WaitForChild("ScreenGui")
+
+-- Function to update cam lock state
+local function updateCamLockState()
+    if getgenv().settings.camLockEnabled then
+        toggleButton.Text = "Cam Lock On"
+    else
+        toggleButton.Text = "Cam Lock Off"
+    end
+end
+
+-- Toggle button click handler
+toggleButton.MouseButton1Click:Connect(function()
+    getgenv().settings.camLockEnabled = not getgenv().settings.camLockEnabled
+    updateCamLockState()
+end)
+
+-- Function to lock camera on target
+local function lockCameraOnTarget(target)
+    if target and target.Character then
+        local targetPosition = target.Character[getgenv().settings.hitPart].Position
+        local smoothMove = (targetPosition - camera.CFrame.Position) * getgenv().settings.smoothness
+        camera.CFrame = camera.CFrame:Lerp(CFrame.new(targetPosition + smoothMove), getgenv().settings.prediction)
+    end
+end
+
+-- Mobile-specific bullet firing mechanism
+local function fireBullet(targetPosition)
+    -- Create a bullet
+    local bullet = Instance.new("Part")
+    bullet.Shape = Enum.PartType.Ball
+    bullet.Size = Vector3.new(0.2, 0.2, 0.2)  -- Bullet size
+    bullet.Position = camera.CFrame.Position  -- Start from camera position
+    bullet.Anchored = true
+    bullet.CanCollide = false
+    bullet.Parent = workspace
+
+    -- Calculate direction from camera to target
+    local direction = (targetPosition - camera.CFrame.Position).unit
+
+    -- Move bullet in the direction of the target
+    local bodyVelocity = Instance.new("BodyVelocity")
+    bodyVelocity.MaxForce = Vector3.new(10000, 10000, 10000)
+    bodyVelocity.Velocity = direction * 100  -- Speed of the bullet
+    bodyVelocity.Parent = bullet
+
+    -- Bullet collision detection
+    bullet.Touched:Connect(function(hit)
+        -- Check if the bullet hit a valid target (like an enemy)
+        if hit.Parent:FindFirstChildOfClass("Humanoid") then
+            -- Bullet hit player, deal damage or any other effect
+            print("Bullet hit: " .. hit.Parent.Name)
+            bullet:Destroy()  -- Destroy the bullet after impact
+        end
+    end)
+
+    -- Destroy the bullet after a set time
+    game.Debris:AddItem(bullet, 5)
+end
+
+-- Mobile touch input to fire bullets
+local function onTouchInput()
+    local closestPlayer = findClosestPlayer()
+    if closestPlayer then
+        local targetPosition = closestPlayer.Character[getgenv().settings.hitPart].Position
+        fireBullet(targetPosition)
+    end
+end
+
+-- Update loop
+heartbeat:Connect(function()
+    if getgenv().settings.camLockEnabled then
+        local closestPlayer = findClosestPlayer()
+        if closestPlayer then
+            lockCameraOnTarget(closestPlayer)
+
+            -- Fire a bullet if the screen is tapped (mobile input)
+            if userInputService.TouchEnabled and #userInputService:GetTouches() > 0 then
+                onTouchInput()  -- Handle touch input to fire
+            end
+        end
+    end
+end)
+
+-- Anti-AFK feature
+local lastMoveTime = tick()
+userInputService.InputBegan:Connect(function(input)
+    lastMoveTime = tick()  -- Reset the timer on input
+end)
+
+-- Function to ensure the player is not AFK (not idling)
+heartbeat:Connect(function()
+    if tick() - lastMoveTime > 300 then
+        -- Slightly move the player or interact
+        -- For now, it's a placeholder: do something to prevent AFK
+        player.Character.HumanoidRootPart.CFrame = player.Character.HumanoidRootPart.CFrame * CFrame.new(0.1, 0, 0)
+    end
+end)
+
+-- Persistence across death
+player.CharacterAdded:Connect(function()
+    getgenv().settings.camLockEnabled = false  -- Reset state after respawn
+    updateCamLockState()
+end) 
