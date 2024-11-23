@@ -1,12 +1,12 @@
 -- getgenv().settings = {
 getgenv().settings = {
     camLockEnabled = false,
-    prediction = 0.5,  -- Adjust prediction based on ping
-    smoothness = 0.25,  -- Adjust smoothness for camera movement
-    jumpOffset = 1,  -- Adjust jump offset based on ping
+    prediction = 0.168,  -- Adjust prediction based on ping
+    smoothness = 0.076,  -- Adjust smoothness for camera movement
+    jumpOffset = 0.31,  -- Adjust jump offset based on ping
     hitPart = "UpperTorso",  -- Default hit part
     maxDistance = 500,  -- Maximum distance for camera lock
-    crosshairSize = 15,  -- Crosshair size
+    crosshairSize = 7,  -- Crosshair size
     crosshairColor = Color3.fromRGB(255, 255, 255),  -- Crosshair color (White)
 }
 
